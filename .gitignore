@@ -1,0 +1,17 @@
+# Binaries
+/bin/
+/build/
+/*.exe
+/*.out
+/*.test
+
+# IDEs and OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Dependency directories
+vendor/
+
+# Env files
+.env*
