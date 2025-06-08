@@ -1,39 +1,23 @@
 package controllers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/gimhanr9/go-loyalty-api/database"
-	"github.com/gimhanr9/go-loyalty-api/models"
-	"github.com/gimhanr9/go-loyalty-api/utils"
+	"github.com/gimhanr9/go-loyalty-api/services"
+	"net/http"
 )
 
 func Login(c *gin.Context) {
-	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+	var req struct {
+		CustomerID string `json:"customer_id"`
 	}
-
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	if err := c.ShouldBindJSON(&req); err != nil || req.CustomerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "CustomerID required"})
 		return
 	}
 
-	var user models.User
-	if err := database.DB.Where("email = ?", body.Email).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
-		return
-	}
-
-	if user.Password != body.Password {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
-		return
-	}
-
-	token, err := utils.GenerateJWT(user.ID)
+	token, err := services.AuthService{}.Login(req.CustomerID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generation failed"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
