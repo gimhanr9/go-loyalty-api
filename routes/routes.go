@@ -3,15 +3,22 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/gimhanr9/go-loyalty-api/controllers"
+	"github.com/gimhanr9/go-loyalty-api/middleware"
 )
 
 func RegisterRoutes(router *gin.Engine) {
 	api := router.Group("/api")
+	
+	// Public routes
+	api.POST("/login", controllers.Login)
+
+	// Protected routes
+	protected := api.Group("/")
+	protected.Use(middleware.AuthMiddleware())
 	{
-		api.POST("/login", controllers.Login)
-		api.POST("/earn", controllers.EarnPoints)
-		api.POST("/redeem", controllers.RedeemPoints)
-		api.GET("/balance", controllers.GetBalance)
-		api.GET("/history", controllers.GetHistory)
+		protected.POST("/earn", controllers.EarnPoints)
+		protected.POST("/redeem", controllers.RedeemPoints)
+		protected.GET("/balance", controllers.GetBalance)
+		protected.GET("/history", controllers.GetHistory)
 	}
 }
