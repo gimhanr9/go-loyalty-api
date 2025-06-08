@@ -7,9 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
-	"go-loyalty-api/config"
-	"go-loyalty-api/database"
-	"go-loyalty-api/routes"
+	"github.com/gimhanr9/go-loyalty-api/config"
+	"github.com/gimhanr9/go-loyalty-api/database"
+	"github.com/gimhanr9/go-loyalty-api/routes"
 )
 
 func init() {

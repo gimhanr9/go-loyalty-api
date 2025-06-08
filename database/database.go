@@ -6,7 +6,7 @@ import (
     "gorm.io/gorm"
     "log"
 
-    "go-loyalty-api/models"
+    "github.com/gimhanr9/go-loyalty-api/models"
 )
 
 var DB *gorm.DB
