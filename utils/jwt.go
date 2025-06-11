@@ -1,25 +1,32 @@
 package utils
 
 import (
-	"time"
 	"os"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func GenerateJWT(userID uint) (string, error) {
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+
+// GenerateToken generates a JWT token using customer ID
+func GenerateToken(customerID string) (string, error) {
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"customer_id": customerID,
+		"exp":         time.Now().Add(time.Hour * 72).Unix(), // 3 days
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	secret := os.Getenv("JWT_SECRET")
-	return token.SignedString([]byte(secret))
+	return token.SignedString(jwtSecret)
 }
 
-func ParseJWT(tokenStr string) (*jwt.Token, error) {
-	secret := os.Getenv("JWT_SECRET")
-	return jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		return []byte(secret), nil
+// ParseToken validates and extracts claims
+func ParseToken(tokenStr string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
 	})
+	if err != nil || !token.Valid {
+		return nil, err
+	}
+	return token.Claims.(jwt.MapClaims), nil
 }

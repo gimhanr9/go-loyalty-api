@@ -13,7 +13,6 @@ import (
 )
 
 func init() {
-	// Load environment based on APP_ENV
 	env := os.Getenv("APP_ENV")
 	var err error
 
@@ -31,16 +30,12 @@ func init() {
 }
 
 func main() {
-	// Initialize DB
 	database.Connect()
 
-	// Init Gin router
 	router := gin.Default()
 
-	// Register API routes
 	routes.RegisterRoutes(router)
 
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

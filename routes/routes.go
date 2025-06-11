@@ -8,11 +8,12 @@ import (
 
 func RegisterRoutes(router *gin.Engine) {
 	api := router.Group("/api")
-	
-	// Public routes
+
+	// Public
+	api.POST("/register", controllers.Register)
 	api.POST("/login", controllers.Login)
 
-	// Protected routes
+	// Protected
 	protected := api.Group("/")
 	protected.Use(middleware.AuthMiddleware())
 	{

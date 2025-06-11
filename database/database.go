@@ -1,27 +1,25 @@
-// database/database.go
 package database
 
 import (
-    "gorm.io/driver/sqlite"
-    "gorm.io/gorm"
-    "log"
+	"log"
 
-    "github.com/gimhanr9/go-loyalty-api/models"
+	"github.com/gimhanr9/go-loyalty-api/models"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
 func Connect() {
-    db, err := gorm.Open(sqlite.Open("loyalty.db"), &gorm.Config{})
-    if err != nil {
-        log.Fatalf("Failed to connect to database: %v", err)
-    }
+	var err error
+	DB, err = gorm.Open(sqlite.Open("loyalty.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
 
-    // Auto-migrate the user model
-    if err := db.AutoMigrate(&models.User{}); err != nil {
-        log.Fatalf("Migration failed: %v", err)
-    }
-
-    DB = db
-    log.Println("Connected to database and migrated models.")
+	// Auto migrate user table
+	err = DB.AutoMigrate(&models.User{})
+	if err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	}
 }
