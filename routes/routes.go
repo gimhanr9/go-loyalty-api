@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/gimhanr9/go-loyalty-api/controllers"
 	"github.com/gimhanr9/go-loyalty-api/middleware"
+	"github.com/gin-gonic/gin"
 )
 
 func RegisterRoutes(router *gin.Engine) {
