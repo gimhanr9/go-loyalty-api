@@ -6,36 +6,38 @@ import (
 	"os"
 	"sync"
 
-	square "github.com/square/square-go-sdk"
+	"github.com/square/square-go-sdk/client"
+	"github.com/square/square-go-sdk/loyalty"
 	"github.com/square/square-go-sdk/option"
 )
 
 var (
-	clientOnce  sync.Once
-	sqClient    *square.Client
+	clientOnce   sync.Once
+	squareClient *client.Client
 
-	programID    string
-	programOnce  sync.Once
-	programErr   error
+	programOnce sync.Once
+	programID   string
+	programErr  error
 )
 
-// Init initializes Square client once
-func Init() *square.Client {
+// InitSquareClient initializes the Square client only once and returns it.
+func InitSquareClient() *client.Client {
 	clientOnce.Do(func() {
-		sqClient = square.NewClient(
+		squareClient = client.NewClient(
 			option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
 		)
 	})
-	return sqClient
+	return squareClient
 }
 
+// FetchProgramID retrieves and caches the Square Loyalty Program ID.
 func FetchProgramID() (string, error) {
 	programOnce.Do(func() {
-		client := Init()
+		client := InitSquareClient()
 
 		resp, err := client.Loyalty.Programs.Get(
 			context.TODO(),
-			&square.GetLoyaltyProgramRequest{
+			&loyalty.GetProgramsRequest{
 				ProgramID: "main", //Default program ID
 			},
 		)

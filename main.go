@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
-	"github.com/gimhanr9/go-loyalty-api/config"
 	"github.com/gimhanr9/go-loyalty-api/database"
 	"github.com/gimhanr9/go-loyalty-api/routes"
 )

@@ -3,13 +3,13 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gimhanr9/go-loyalty-api/repositories"
 	"github.com/gimhanr9/go-loyalty-api/services"
 	"github.com/gimhanr9/go-loyalty-api/utils"
+	"github.com/gin-gonic/gin"
 )
 
-var authService = services.NewAuthService(repository.NewAuthRepository())
+var authService = services.NewAuthService(repositories.NewAuthRepository())
 
 type RegisterRequest struct {
 	Name  string `json:"name"`

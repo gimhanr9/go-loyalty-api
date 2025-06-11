@@ -1,16 +1,18 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 
-	"github.com/google/uuid"
 	"github.com/gimhanr9/go-loyalty-api/models"
 	"github.com/gimhanr9/go-loyalty-api/repositories"
+	"github.com/google/uuid"
 	square "github.com/square/square-go-sdk"
-	"github.com/square/square-go-sdk/loyalty"
-	"github.com/square/square-go-sdk/option"
+	client "github.com/square/square-go-sdk/client"
+	loyalty "github.com/square/square-go-sdk/loyalty"
+	option "github.com/square/square-go-sdk/option"
 	"gorm.io/gorm"
 )
 
@@ -21,15 +23,17 @@ type AuthService interface {
 
 type authService struct {
 	repo         repositories.AuthRepository
-	squareClient *square.Client
+	squareClient *client.Client
 }
 
-func NewAuthService(repo repository.AuthRepository) AuthService {
-	client := square.NewClient(option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")))
+func NewAuthService(repo repositories.AuthRepository) AuthService {
+	squareClient := client.NewClient(
+		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
+	)
 
 	return &authService{
 		repo:         repo,
-		squareClient: client,
+		squareClient: squareClient,
 	}
 }
 
@@ -45,7 +49,7 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 		return nil, errors.New("failed to fetch loyalty program ID")
 	}
 
-	// Create in Square
+	// Create Loyalty Account in Square
 	idempotencyKey := uuid.New().String()
 
 	req := &loyalty.CreateLoyaltyAccountRequest{
@@ -58,7 +62,7 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 		IdempotencyKey: idempotencyKey,
 	}
 
-	res, err := s.squareClient.Loyalty.Accounts.Create(req)
+	res, err := s.squareClient.Loyalty.Accounts.Create(context.TODO(), req)
 	if err != nil || res.LoyaltyAccount == nil {
 		return nil, fmt.Errorf("failed to create loyalty account: %v", err)
 	}
