@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	square "github.com/square/square-go-sdk"
@@ -108,24 +107,60 @@ func (s *loyaltyService) EarnPoints(accountID string, productDescription string,
 }
 
 // RedeemPoints redeems points for a reward tier
-func (s *loyaltyService) RedeemPoints(accountID string, rewardTierID string) error {
-	_, err := s.client.Loyalty.Accounts.Redeem(context.TODO(), accountID, &loyalty.RedeemLoyaltyRewardRequest{
-		RewardTierId:   rewardTierID,
-		IdempotencyKey: generateUUID(),
-	})
-	return err
+func (s *loyaltyService) RedeemPoints(accountID string, rewardTierID string, productDescription string, amount int) error {
+	idempotencyKey := uuid.New().String()
+
+	//Create order
+	reqOrder := &square.CreateOrderRequest{
+		Order: &square.Order{
+			LineItems: []*square.OrderLineItem{
+				&square.OrderLineItem{
+					Name:     &productDescription,
+					Quantity: "1",
+					BasePriceMoney: &square.Money{
+						Amount: square.Int64(
+							int64(amount),
+						),
+						Currency: square.CurrencyUsd.Ptr(),
+					},
+				},
+			},
+			LocationID: os.Getenv("LOCATION_ID"),
+		},
+		IdempotencyKey: &idempotencyKey,
+	}
+
+	resOrder, errOrder := s.squareClient.Orders.Create(context.TODO(), reqOrder)
+	if errOrder != nil {
+		return errors.New("failed to create order")
+	}
+	
+	var orderId = *resOrder.Order.ID
+
+	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
+		AccountID: accountID,
+		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
+			OrderID: square.String(
+				orderId,
+			),
+		},
+		LocationID:     os.Getenv("LOCATION_ID"),
+		IdempotencyKey: idempotencyKey,
+	}
 }
 
 // GetBalance fetches the points balance of the loyalty account
 func (s *loyaltyService) GetBalance(accountID string) (int, error) {
-	resp, err := s.client.Loyalty.Accounts.Retrieve(context.TODO(), accountID)
+	resp, err := s.squareClient.Loyalty.Accounts.Get(context.TODO(),
+		&loyalty.GetAccountsRequest{
+            AccountID: accountID,
+        },
+	)
 	if err != nil {
 		return 0, err
 	}
-	if resp.LoyaltyAccount == nil || resp.LoyaltyAccount.Points == nil {
-		return 0, fmt.Errorf("no points data found")
-	}
-	return int(*resp.LoyaltyAccount.Points), nil
+
+	return *resp.LoyaltyAccount.Balance, nil
 }
 
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
