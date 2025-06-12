@@ -301,8 +301,21 @@ func GetHistory(accountID string, cursor string) (*dto.MappedLoyaltyHistoryRespo
 			}
 
 			points := 0
-			if e.AccumulatePoints != nil && e.AccumulatePoints.Points != nil {
-				points = int(*e.AccumulatePoints.Points)
+			switch e.Type {
+			case square.LoyaltyEventTypeAccumulatePoints:
+				if e.AccumulatePoints != nil && e.AccumulatePoints.Points != nil {
+					points = int(*e.AccumulatePoints.Points)
+				}
+			case square.LoyaltyEventTypeAdjustPoints:
+				if e.AdjustPoints != nil {
+					points = e.AdjustPoints.Points
+				}
+			case square.LoyaltyEventTypeCreateReward:
+				if e.CreateReward != nil {
+					points = e.CreateReward.Points
+				}
+			default:
+				points = 0
 			}
 
 			transactions = append(transactions, dto.TransactionDTO{
