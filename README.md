@@ -22,7 +22,7 @@ Variables needed for environment files:
 
 `PORT=8080`
 
-LOCATION_ID (from Square)
+`LOCATION_ID (from Square)`
 
 
 ## Setup & Run
