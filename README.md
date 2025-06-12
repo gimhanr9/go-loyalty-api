@@ -1,6 +1,6 @@
 
 # Square Loyalty Challenge API
-This is the REST API for the Square Loyalty Challenge build using Golang.
+This is the REST API for the Square Loyalty Challenge built using Golang.
 
 
 
