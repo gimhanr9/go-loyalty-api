@@ -97,3 +97,19 @@ func GetHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, history)
 }
+
+func GetRewardTiers(c *gin.Context) {
+	accountID := c.Query("accountID")
+	if accountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing accountID"})
+		return
+	}
+
+	percentage, err := services.GetDiscountPercentageByClosestRewardTier(accountID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"discount_percentage": percentage})
+}

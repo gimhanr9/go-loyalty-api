@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	square "github.com/square/square-go-sdk"
+	catalog "github.com/square/square-go-sdk/catalog"
 	client "github.com/square/square-go-sdk/client"
 	loyalty "github.com/square/square-go-sdk/loyalty"
 	option "github.com/square/square-go-sdk/option"
@@ -32,6 +34,16 @@ type Transaction struct {
 type MappedLoyaltyHistoryResponse struct {
 	Transactions []Transaction `json:"transactions"`
 	Cursor       string        `json:"cursor"`
+}
+
+type RewardTier struct {
+	RewardTierID string `json:"rewardtierid"`
+	ObjectID     string `json:"objectid"`
+}
+
+type CheckRewardTier struct {
+	OrderID     string       `json:"orderid"`
+	RewardTiers []RewardTier `json:"rewardtiers"`
 }
 
 // EarnPoints adds points to the loyalty account
@@ -175,7 +187,7 @@ func EarnPoints(accountID string, description string, amount int) error {
 	return nil
 }
 
-// // RedeemPoints redeems points for a reward tier
+// RedeemPoints redeems points for a reward tier
 // func (s *loyaltyService) RedeemPoints(accountID string, rewardTierID string, productDescription string, amount int) error {
 // 	idempotencyKey := uuid.New().String()
 
@@ -309,4 +321,79 @@ func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse,
 		Transactions: transactions,
 		Cursor:       newCursor,
 	}, nil
+}
+
+func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *RewardTier {
+	var closestTier *square.LoyaltyProgramRewardTier
+	minPoints := int(^uint(0) >> 1) // max int
+
+	for _, tier := range program.RewardTiers {
+		if tier != nil {
+			points := tier.Points // points is int
+
+			if points >= userBalance && points < minPoints {
+				minPoints = points
+				closestTier = tier
+			}
+		}
+	}
+
+	if closestTier == nil || closestTier.ID == nil {
+		return nil // No valid tier found
+	}
+
+	return &RewardTier{
+		RewardTierID: *closestTier.ID,
+		ObjectID:     *closestTier.PricingRuleReference.ObjectID, // optional value you can assign as needed
+	}
+}
+
+// GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
+func GetDiscountPercentageByClosestRewardTier(accountID string) (float64, error) {
+	squareClient := client.NewClient(
+		option.WithBaseURL(square.Environments.Sandbox),
+		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
+	)
+
+	// Get loyalty account
+	resp, err := squareClient.Loyalty.Accounts.Get(context.TODO(),
+		&loyalty.GetAccountsRequest{AccountID: accountID})
+	if err != nil || resp.LoyaltyAccount == nil {
+		return 0, fmt.Errorf("failed to get account %s balance: %w", accountID, err)
+	}
+
+	// Get balance safely
+	balance := 0
+	if resp.LoyaltyAccount.Balance != nil {
+		balance = *resp.LoyaltyAccount.Balance
+	}
+
+	// Get program
+	programRes, err := squareClient.Loyalty.Programs.Get(context.TODO(),
+		&loyalty.GetProgramsRequest{ProgramID: "main"})
+	if err != nil || programRes.Program == nil {
+		return 0, fmt.Errorf("failed to retrieve loyalty program: %w", err)
+	}
+
+	// Find the reward tier
+	rewardTier := MapClosestRewardTier(programRes.Program, balance)
+	if rewardTier == nil {
+		return 0, nil // No tier available, return 0
+	}
+
+	// Fetch the discount object
+	discountRes, err := squareClient.Catalog.Object.Get(context.TODO(),
+		&catalog.GetObjectRequest{ObjectID: rewardTier.ObjectID})
+	if err != nil || discountRes.Object == nil || discountRes.Object.Discount == nil {
+		return 0, nil // Return 0 on any missing part
+	}
+
+	// Extract percentage
+	percentageStr := discountRes.Object.Discount.DiscountData.Percentage
+	percentage, err := strconv.ParseFloat(percentageStr, 64)
+	if err != nil {
+		return 0, nil
+	}
+
+	return percentage, nil
 }
