@@ -20,6 +20,12 @@ type LoyaltyService interface {
 	GetHistory(accountID string) ([]square.LoyaltyEvent, error)
 }
 
+// Loyalty History return reponse
+type LoyaltyHistoryResponse struct {
+	Events []square.LoyaltyEvent `json:"history"`
+	Cursor string                `json:"cursor"`
+}
+
 // EarnPoints adds points to the loyalty account
 func EarnPoints(accountID string, description string, amount int) error {
 
@@ -158,12 +164,9 @@ func GetBalance(accountID string) (int, error) {
 }
 
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
-func GetHistory(accountID string) ([]square.LoyaltyEvent, error) {
-
+func GetHistory(accountID string) (*LoyaltyHistoryResponse, error) {
 	squareClient := client.NewClient(
-		option.WithBaseURL(
-			square.Environments.Sandbox,
-		),
+		option.WithBaseURL(square.Environments.Sandbox),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
 	)
 
@@ -181,8 +184,13 @@ func GetHistory(accountID string) ([]square.LoyaltyEvent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch loyalty history for account %s: %w", accountID, err)
 	}
+
+	// Handle no results
 	if resp == nil || resp.Events == nil {
-		return []square.LoyaltyEvent{}, nil
+		return &LoyaltyHistoryResponse{
+			Events: []square.LoyaltyEvent{},
+			Cursor: "",
+		}, nil
 	}
 
 	// Convert []*square.LoyaltyEvent to []square.LoyaltyEvent
@@ -193,5 +201,12 @@ func GetHistory(accountID string) ([]square.LoyaltyEvent, error) {
 		}
 	}
 
-	return events, nil
+	cursor := ""
+	if c := resp.GetCursor(); c != nil {
+		cursor = *c
+	}
+	return &LoyaltyHistoryResponse{
+		Events: events,
+		Cursor: cursor,
+	}, nil
 }
