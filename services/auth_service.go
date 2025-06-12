@@ -22,15 +22,13 @@ type AuthService interface {
 }
 
 type authService struct {
-	repo         repositories.AuthRepository
-	squareClient *client.Client
+	repo repositories.AuthRepository
 }
 
 func NewAuthService(repo repositories.AuthRepository) AuthService {
 
 	return &authService{
-		repo:         repo,
-		squareClient: squareClient,
+		repo: repo,
 	}
 }
 

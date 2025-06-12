@@ -8,7 +8,6 @@ import (
 )
 
 // Initialize loyalty service
-var loyaltyService = services.NewLoyaltyService()
 
 type RedeemRequest struct {
 	RewardTierID string `json:"reward_tier_id" binding:"required"`
@@ -48,13 +47,13 @@ func EarnPoints(c *gin.Context) {
 		return
 	}
 
-	err := loyaltyService.EarnPoints(customerID, req.Description, req.Amount)
+	err := services.EarnPoints(customerID, req.Description, req.Amount)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	balance, err := loyaltyService.GetBalance(customerID)
+	balance, err := services.GetBalance(customerID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Points earned successfully, but failed to fetch balance",
@@ -70,7 +69,7 @@ func EarnPoints(c *gin.Context) {
 func GetBalance(c *gin.Context) {
 	accountID := c.GetString("customer_id")
 
-	balance, err := loyaltyService.GetBalance(accountID)
+	balance, err := services.GetBalance(accountID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -86,11 +85,11 @@ func GetHistory(c *gin.Context) {
 		return
 	}
 
-	history, err := loyaltyService.GetHistory(customerID)
+	history, err := services.GetHistory(customerID)
 	if err != nil {
 		// Optional: log the error for internal monitoring
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to retrieve loyalty history",
+			"error": err,
 		})
 		return
 	}
