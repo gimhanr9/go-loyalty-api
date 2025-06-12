@@ -18,44 +18,59 @@ type EarnRequest struct {
 	Points int `json:"points" binding:"required"`
 }
 
-func RedeemPoints(c *gin.Context) {
-	customerID := c.GetString("customer_id")
+// func RedeemPoints(c *gin.Context) {
+// 	customerID := c.GetString("customer_id")
 
-	var req RedeemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: reward_tier_id required"})
-		return
-	}
+// 	var req RedeemRequest
+// 	if err := c.ShouldBindJSON(&req); err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: reward_tier_id required"})
+// 		return
+// 	}
 
-	if err := loyaltyService.RedeemPoints(customerID, req.RewardTierID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+// 	if err := loyaltyService.RedeemPoints(customerID, req.RewardTierID); err != nil {
+// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+// 		return
+// 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Reward redeemed successfully"})
-}
+// 	c.JSON(http.StatusOK, gin.H{"message": "Reward redeemed successfully"})
+// }
 
 func EarnPoints(c *gin.Context) {
 	customerID := c.GetString("customer_id")
 
-	var req EarnRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Points <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: points must be > 0"})
+	var req struct {
+		Amount      int    `json:"amount"`
+		Description string `json:"description"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Description == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: amount must be > 0 and description is required"})
 		return
 	}
 
-	if err := loyaltyService.EarnPoints(customerID, req.Points); err != nil {
+	err := loyaltyService.EarnPoints(customerID, req.Description, req.Amount)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Points earned successfully"})
-}
-
-func GetBalance(c *gin.Context) {
-	customerID := c.GetString("customer_id")
-
 	balance, err := loyaltyService.GetBalance(customerID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Points earned successfully, but failed to fetch balance",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Points earned successfully",
+		"balance": balance,
+	})
+}
+func GetBalance(c *gin.Context) {
+	accountID := c.GetString("customer_id")
+
+	balance, err := loyaltyService.GetBalance(accountID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -66,10 +81,17 @@ func GetBalance(c *gin.Context) {
 
 func GetHistory(c *gin.Context) {
 	customerID := c.GetString("customer_id")
+	if customerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing customer_id in context"})
+		return
+	}
 
 	history, err := loyaltyService.GetHistory(customerID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// Optional: log the error for internal monitoring
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to retrieve loyalty history",
+		})
 		return
 	}
 

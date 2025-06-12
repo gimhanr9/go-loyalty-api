@@ -27,9 +27,6 @@ type authService struct {
 }
 
 func NewAuthService(repo repositories.AuthRepository) AuthService {
-	squareClient := client.NewClient(
-		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
-	)
 
 	return &authService{
 		repo:         repo,
@@ -44,10 +41,30 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 		return nil, errors.New("user with email or phone already exists")
 	}
 
-	programID, err := FetchProgramID()
-	if err != nil {
-		return nil, errors.New("failed to fetch loyalty program ID")
+	squareClient := client.NewClient(
+		option.WithBaseURL(
+			square.Environments.Sandbox,
+		),
+		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
+	)
+
+	// programID, err := FetchProgramID()
+	// if err != nil {
+	// 	return nil, errors.New("failed to fetch loyalty program ID")
+	// }
+
+	programRes, programErr := squareClient.Loyalty.Programs.Get(
+		context.TODO(),
+		&loyalty.GetProgramsRequest{
+			ProgramID: "main", //Default program ID
+		},
+	)
+
+	if programErr != nil {
+		return nil, errors.New(programErr.Error())
 	}
+
+	programID = *programRes.Program.ID
 
 	// Create Loyalty Account in Square
 	idempotencyKey := uuid.New().String()
@@ -62,7 +79,7 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 		IdempotencyKey: idempotencyKey,
 	}
 
-	res, err := s.squareClient.Loyalty.Accounts.Create(context.TODO(), req)
+	res, err := squareClient.Loyalty.Accounts.Create(context.TODO(), req)
 	if err != nil || res.LoyaltyAccount == nil {
 		return nil, fmt.Errorf("failed to create loyalty account: %v", err)
 	}

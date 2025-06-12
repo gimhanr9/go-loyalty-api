@@ -14,11 +14,11 @@ var authService = services.NewAuthService(repositories.NewAuthRepository())
 type RegisterRequest struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
-	Phone string `json:"phone"`
+	Phone string `json:"phoneNumber"`
 }
 
 type LoginRequest struct {
-	Phone string `json:"phone"`
+	Phone string `json:"phoneNumber"`
 }
 
 func Register(c *gin.Context) {
