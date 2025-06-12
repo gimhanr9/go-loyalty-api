@@ -38,6 +38,35 @@ func EarnPoints(accountID string, description string, amount int) error {
 
 	idempotencyKey := uuid.New().String()
 
+	//Get program Id
+	programRes, err := squareClient.Loyalty.Programs.Get(
+		context.TODO(),
+		&loyalty.GetProgramsRequest{
+			ProgramID: "main", //Default program ID
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to retrieve program: %w", err)
+	}
+
+	programID = *programRes.Program.ID
+
+	custoemrRes, err := squareClient.Loyalty.Accounts.Search(
+		context.TODO(),
+		&loyalty.SearchLoyaltyAccountsRequest{
+			Limit: square.Int(
+				1,
+			),
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to get customer: %w", err)
+	}
+
+	customerId := custoemrRes.LoyaltyAccounts[0].CustomerID
+
 	reqOrder := &square.CreateOrderRequest{
 		Order: &square.Order{
 			LineItems: []*square.OrderLineItem{
@@ -50,8 +79,10 @@ func EarnPoints(accountID string, description string, amount int) error {
 					},
 				},
 			},
+			CustomerID: customerId,
 			LocationID: os.Getenv("LOCATION_ID"),
 		},
+
 		IdempotencyKey: &idempotencyKey,
 	}
 
@@ -72,15 +103,20 @@ func EarnPoints(accountID string, description string, amount int) error {
 		IdempotencyKey: idempotencyKey,
 	}
 
-	_, err = squareClient.Payments.Create(context.TODO(), reqPayment)
+	paymentRes, err := squareClient.Payments.Create(context.TODO(), reqPayment)
 	if err != nil {
 		return fmt.Errorf("failed to create payment: %w", err)
+	}
+
+	if paymentRes.Payment == nil || paymentRes.Payment.Status == nil || *paymentRes.Payment.Status != "COMPLETED" {
+		return fmt.Errorf("payment not completed, status: %v", paymentRes.Payment.Status)
 	}
 
 	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
 		AccountID: accountID,
 		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
-			OrderID: square.String(orderID),
+			OrderID:          square.String(orderID),
+			LoyaltyProgramID: &programID,
 		},
 		LocationID:     os.Getenv("LOCATION_ID"),
 		IdempotencyKey: idempotencyKey,
@@ -90,6 +126,43 @@ func EarnPoints(accountID string, description string, amount int) error {
 	if err != nil {
 		return fmt.Errorf("failed to accumulate points: %w", err)
 	}
+
+	// reqCalculatePoints := &loyalty.CalculateLoyaltyPointsRequest{
+	// 	ProgramID: programID,
+	// 	TransactionAmountMoney: &square.Money{
+	// 		Amount: square.Int64(
+	// 			int64(amount),
+	// 		),
+	// 		Currency: square.CurrencyUsd.Ptr(),
+	// 	},
+	// 	LoyaltyAccountID: square.String(
+	// 		accountID,
+	// 	),
+	// }
+
+	// resCalc, err := squareClient.Loyalty.Programs.Calculate(context.TODO(), reqCalculatePoints)
+
+	// if err != nil {
+	// 	return fmt.Errorf("failed to calculate points: %w", err)
+	// }
+
+	// pointsEarned := *resCalc.Points
+
+	// if pointsEarned > 0 {
+	// 	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
+	// 		AccountID: accountID,
+	// 		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
+	// 			OrderID: square.String(orderID),
+	// 		},
+	// 		LocationID:     os.Getenv("LOCATION_ID"),
+	// 		IdempotencyKey: idempotencyKey,
+	// 	}
+
+	// 	_, err = squareClient.Loyalty.Accounts.AccumulatePoints(context.TODO(), reqAccumulate)
+	// 	if err != nil {
+	// 		return fmt.Errorf("failed to accumulate points: %w", err)
+	// 	}
+	// }
 
 	return nil
 }
