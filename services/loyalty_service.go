@@ -327,14 +327,15 @@ func GetHistory(accountID string, cursor string) (*dto.MappedLoyaltyHistoryRespo
 
 func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *dto.RewardTierDTO {
 	var closestTier *square.LoyaltyProgramRewardTier
-	minPoints := int(^uint(0) >> 1) // max int
+	closestPoints := -1
 
 	for _, tier := range program.RewardTiers {
 		if tier != nil {
-			points := tier.Points // points is int
+			points := tier.Points
 
-			if points >= userBalance && points < minPoints {
-				minPoints = points
+			// Choose the tier with highest required points ≤ userBalance
+			if points <= userBalance && points > closestPoints {
+				closestPoints = points
 				closestTier = tier
 			}
 		}
@@ -350,8 +351,6 @@ func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *dto.
 	if percentageStr != nil {
 		if f, err := strconv.ParseFloat(*percentageStr, 32); err == nil {
 			discountPercentage = float32(f)
-		} else {
-			discountPercentage = 0
 		}
 	}
 
