@@ -29,6 +29,8 @@ Variables needed for environment files:
 
 1 Clone the project.
 
-2 Go to the project directory and in the terminal run command `go mod download`
+2 Add the environment files.
 
-3 Finally run the command `go run main.go`
+3 Go to the project directory and in the terminal run command `go mod download`
+
+4 Finally run the command `go run main.go`
