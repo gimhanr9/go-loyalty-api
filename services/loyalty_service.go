@@ -164,28 +164,32 @@ func GetBalance(accountID string) (int, error) {
 }
 
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
-func GetHistory(accountID string) (*LoyaltyHistoryResponse, error) {
+func GetHistory(accountID string, cursor string) (*LoyaltyHistoryResponse, error) {
 	squareClient := client.NewClient(
 		option.WithBaseURL(square.Environments.Sandbox),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
 	)
 
-	resp, err := squareClient.Loyalty.SearchEvents(context.TODO(),
-		&square.SearchLoyaltyEventsRequest{
-			Query: &square.LoyaltyEventQuery{
-				Filter: &square.LoyaltyEventFilter{
-					LoyaltyAccountFilter: &square.LoyaltyEventLoyaltyAccountFilter{
-						LoyaltyAccountID: accountID,
-					},
+	req := &square.SearchLoyaltyEventsRequest{
+		Query: &square.LoyaltyEventQuery{
+			Filter: &square.LoyaltyEventFilter{
+				LoyaltyAccountFilter: &square.LoyaltyEventLoyaltyAccountFilter{
+					LoyaltyAccountID: accountID,
 				},
 			},
-			Limit: square.Int(30),
-		})
+		},
+		Limit: square.Int(30),
+	}
+
+	if cursor != "" {
+		req.Cursor = square.String(cursor)
+	}
+
+	resp, err := squareClient.Loyalty.SearchEvents(context.TODO(), req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch loyalty history for account %s: %w", accountID, err)
 	}
 
-	// Handle no results
 	if resp == nil || resp.Events == nil {
 		return &LoyaltyHistoryResponse{
 			Events: []square.LoyaltyEvent{},
@@ -193,7 +197,6 @@ func GetHistory(accountID string) (*LoyaltyHistoryResponse, error) {
 		}, nil
 	}
 
-	// Convert []*square.LoyaltyEvent to []square.LoyaltyEvent
 	events := make([]square.LoyaltyEvent, len(resp.Events))
 	for i, e := range resp.Events {
 		if e != nil {
@@ -201,12 +204,13 @@ func GetHistory(accountID string) (*LoyaltyHistoryResponse, error) {
 		}
 	}
 
-	cursor := ""
+	newCursor := ""
 	if c := resp.GetCursor(); c != nil {
-		cursor = *c
+		newCursor = *c
 	}
+
 	return &LoyaltyHistoryResponse{
 		Events: events,
-		Cursor: cursor,
+		Cursor: newCursor,
 	}, nil
 }

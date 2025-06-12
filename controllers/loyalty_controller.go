@@ -85,14 +85,15 @@ func GetHistory(c *gin.Context) {
 		return
 	}
 
-	history, err := services.GetHistory(customerID)
+	cursor := c.Query("cursor") // read from query param
+
+	history, err := services.GetHistory(customerID, cursor)
 	if err != nil {
-		// Optional: log the error for internal monitoring
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err,
+			"error": err.Error(), // Return error message
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"history": history})
+	c.JSON(http.StatusOK, history)
 }
