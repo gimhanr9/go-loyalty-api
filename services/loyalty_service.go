@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	square "github.com/square/square-go-sdk"
 	client "github.com/square/square-go-sdk/client"
@@ -20,10 +21,17 @@ type LoyaltyService interface {
 	GetHistory(accountID string) ([]square.LoyaltyEvent, error)
 }
 
+type Transaction struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Points    int    `json:"points"`
+	Timestamp string `json:"timestamp"`
+}
+
 // Loyalty History return reponse
-type LoyaltyHistoryResponse struct {
-	Events []square.LoyaltyEvent `json:"history"`
-	Cursor string                `json:"cursor"`
+type MappedLoyaltyHistoryResponse struct {
+	Transactions []Transaction `json:"transactions"`
+	Cursor       string        `json:"cursor"`
 }
 
 // EarnPoints adds points to the loyalty account
@@ -236,8 +244,16 @@ func GetBalance(accountID string) (int, error) {
 	return *resp.LoyaltyAccount.Balance, nil
 }
 
+func formatTimestamp(raw string) string {
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return raw
+	}
+	return t.Format("2 Jan 2006 15:04")
+}
+
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
-func GetHistory(accountID string, cursor string) (*LoyaltyHistoryResponse, error) {
+func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse, error) {
 	squareClient := client.NewClient(
 		option.WithBaseURL(square.Environments.Sandbox),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
@@ -251,7 +267,7 @@ func GetHistory(accountID string, cursor string) (*LoyaltyHistoryResponse, error
 				},
 			},
 		},
-		Limit: square.Int(30),
+		Limit: square.Int(10),
 	}
 
 	if cursor != "" {
@@ -263,17 +279,24 @@ func GetHistory(accountID string, cursor string) (*LoyaltyHistoryResponse, error
 		return nil, fmt.Errorf("failed to fetch loyalty history for account %s: %w", accountID, err)
 	}
 
-	if resp == nil || resp.Events == nil {
-		return &LoyaltyHistoryResponse{
-			Events: []square.LoyaltyEvent{},
-			Cursor: "",
-		}, nil
-	}
+	transactions := make([]Transaction, 0)
+	if resp.Events != nil {
+		for _, e := range resp.Events {
+			if e == nil {
+				continue
+			}
 
-	events := make([]square.LoyaltyEvent, len(resp.Events))
-	for i, e := range resp.Events {
-		if e != nil {
-			events[i] = *e
+			points := 0
+			if e.AccumulatePoints != nil && e.AccumulatePoints.Points != nil {
+				points = int(*e.AccumulatePoints.Points)
+			}
+
+			transactions = append(transactions, Transaction{
+				ID:        e.ID,
+				Type:      string(e.Type),
+				Points:    points,
+				Timestamp: formatTimestamp(e.CreatedAt),
+			})
 		}
 	}
 
@@ -282,8 +305,8 @@ func GetHistory(accountID string, cursor string) (*LoyaltyHistoryResponse, error
 		newCursor = *c
 	}
 
-	return &LoyaltyHistoryResponse{
-		Events: events,
-		Cursor: newCursor,
+	return &MappedLoyaltyHistoryResponse{
+		Transactions: transactions,
+		Cursor:       newCursor,
 	}, nil
 }
