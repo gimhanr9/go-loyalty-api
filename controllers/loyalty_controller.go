@@ -3,73 +3,76 @@ package controllers
 import (
 	"net/http"
 
+	"github.com/gimhanr9/go-loyalty-api/dto"
 	"github.com/gimhanr9/go-loyalty-api/services"
 	"github.com/gin-gonic/gin"
 )
 
-// Initialize loyalty service
-
-type RedeemRequest struct {
-	RewardTierID string `json:"reward_tier_id" binding:"required"`
-}
-
-type EarnRequest struct {
-	Points int `json:"points" binding:"required"`
-}
-
-// func RedeemPoints(c *gin.Context) {
-// 	customerID := c.GetString("customer_id")
-
-// 	var req RedeemRequest
-// 	if err := c.ShouldBindJSON(&req); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: reward_tier_id required"})
-// 		return
-// 	}
-
-// 	if err := loyaltyService.RedeemPoints(customerID, req.RewardTierID); err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"message": "Reward redeemed successfully"})
-// }
-
-func EarnPoints(c *gin.Context) {
-	customerID := c.GetString("customer_id")
-
-	var req struct {
-		Amount      int    `json:"amount"`
-		Description string `json:"description"`
-	}
+func RedeemPoints(c *gin.Context) {
+	var req dto.RedeemPointsDTO
 
 	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Description == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: amount must be > 0 and description is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	err := services.EarnPoints(customerID, req.Description, req.Amount)
+	req.AccountId = c.GetString("customer_id")
+
+	err := services.RedeemPoints(req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	balance, err := services.GetBalance(customerID)
+	rewardTier, err := services.GetDiscountPercentageByClosestRewardTier(req.AccountId)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Points earned successfully, but failed to fetch balance",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Points earned successfully",
-		"balance": balance,
-	})
+	balance, err := services.GetBalance(req.AccountId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"balance": balance, "rewardtier": rewardTier})
+}
+
+func EarnPoints(c *gin.Context) {
+	var req dto.EarnPointsDTO
+
+	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Description == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	req.AccountId = c.GetString("customer_id")
+
+	err := services.EarnPoints(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	rewardTier, err := services.GetDiscountPercentageByClosestRewardTier(req.AccountId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	balance, err := services.GetBalance(req.AccountId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"balance": balance, "rewardtier": rewardTier})
 }
 func GetBalance(c *gin.Context) {
-	accountID := c.GetString("customer_id")
+	accountId := c.GetString("customer_id")
 
-	balance, err := services.GetBalance(accountID)
+	balance, err := services.GetBalance(accountId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -79,15 +82,15 @@ func GetBalance(c *gin.Context) {
 }
 
 func GetHistory(c *gin.Context) {
-	customerID := c.GetString("customer_id")
-	if customerID == "" {
+	accountId := c.GetString("customer_id")
+	if accountId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing customer_id in context"})
 		return
 	}
 
 	cursor := c.Query("cursor") // read from query param
 
-	history, err := services.GetHistory(customerID, cursor)
+	history, err := services.GetHistory(accountId, cursor)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(), // Return error message
@@ -99,17 +102,23 @@ func GetHistory(c *gin.Context) {
 }
 
 func GetRewardTiers(c *gin.Context) {
-	accountID := c.Query("accountID")
-	if accountID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing accountID"})
+	accountId := c.GetString("customer_id")
+	if accountId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing customer_id in context"})
 		return
 	}
 
-	percentage, err := services.GetDiscountPercentageByClosestRewardTier(accountID)
+	rewardTier, err := services.GetDiscountPercentageByClosestRewardTier(accountId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"discount_percentage": percentage})
+	balance, err := services.GetBalance(accountId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"balance": balance, "rewardtier": rewardTier})
 }

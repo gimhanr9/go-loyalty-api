@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 
+	"github.com/gimhanr9/go-loyalty-api/dto"
 	"github.com/gimhanr9/go-loyalty-api/repositories"
 	"github.com/gimhanr9/go-loyalty-api/services"
 	"github.com/gimhanr9/go-loyalty-api/utils"
@@ -11,24 +12,14 @@ import (
 
 var authService = services.NewAuthService(repositories.NewAuthRepository())
 
-type RegisterRequest struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Phone string `json:"phoneNumber"`
-}
-
-type LoginRequest struct {
-	Phone string `json:"phoneNumber"`
-}
-
 func Register(c *gin.Context) {
-	var req RegisterRequest
+	var req dto.RegisterDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	user, err := authService.Register(req.Name, req.Email, req.Phone)
+	user, err := authService.Register(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -38,13 +29,13 @@ func Register(c *gin.Context) {
 }
 
 func Login(c *gin.Context) {
-	var req LoginRequest
+	var req dto.LoginDTO
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	user, err := authService.Login(req.Phone)
+	user, err := authService.Login(req)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return

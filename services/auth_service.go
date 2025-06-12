@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gimhanr9/go-loyalty-api/dto"
 	"github.com/gimhanr9/go-loyalty-api/models"
 	"github.com/gimhanr9/go-loyalty-api/repositories"
 	"github.com/google/uuid"
@@ -17,8 +18,8 @@ import (
 )
 
 type AuthService interface {
-	Register(name, email, phone string) (*models.User, error)
-	Login(phone string) (*models.User, error)
+	Register(req dto.RegisterDTO) (*models.User, error)
+	Login(req dto.LoginDTO) (*models.User, error)
 }
 
 type authService struct {
@@ -32,9 +33,9 @@ func NewAuthService(repo repositories.AuthRepository) AuthService {
 	}
 }
 
-func (s *authService) Register(name, email, phone string) (*models.User, error) {
+func (s *authService) Register(req dto.RegisterDTO) (*models.User, error) {
 	// Check for existing email or phone
-	existing, _ := s.repo.GetByEmailOrPhone(email, phone)
+	existing, _ := s.repo.GetByEmailOrPhone(req.Email, req.Phone)
 	if existing != nil {
 		return nil, errors.New("user with email or phone already exists")
 	}
@@ -45,11 +46,6 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 		),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
 	)
-
-	// programID, err := FetchProgramID()
-	// if err != nil {
-	// 	return nil, errors.New("failed to fetch loyalty program ID")
-	// }
 
 	programRes, programErr := squareClient.Loyalty.Programs.Get(
 		context.TODO(),
@@ -67,28 +63,28 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 	// Create Loyalty Account in Square
 	idempotencyKey := uuid.New().String()
 
-	req := &loyalty.CreateLoyaltyAccountRequest{
+	reqReg := &loyalty.CreateLoyaltyAccountRequest{
 		LoyaltyAccount: &square.LoyaltyAccount{
 			Mapping: &square.LoyaltyAccountMapping{
-				PhoneNumber: &phone,
+				PhoneNumber: square.String(req.Phone),
 			},
 			ProgramID: programID,
 		},
 		IdempotencyKey: idempotencyKey,
 	}
 
-	res, err := squareClient.Loyalty.Accounts.Create(context.TODO(), req)
+	res, err := squareClient.Loyalty.Accounts.Create(context.TODO(), reqReg)
 	if err != nil || res.LoyaltyAccount == nil {
 		return nil, fmt.Errorf("failed to create loyalty account: %v", err)
 	}
 
-	customerID := *res.LoyaltyAccount.ID
+	customerId := *res.LoyaltyAccount.ID
 
 	user := &models.User{
-		Name:       name,
-		Email:      email,
-		Phone:      phone,
-		CustomerID: customerID,
+		Name:       req.Name,
+		Email:      req.Email,
+		Phone:      req.Phone,
+		CustomerID: customerId,
 	}
 
 	if err := s.repo.Create(user); err != nil {
@@ -98,8 +94,8 @@ func (s *authService) Register(name, email, phone string) (*models.User, error) 
 	return user, nil
 }
 
-func (s *authService) Login(phone string) (*models.User, error) {
-	user, err := s.repo.GetByPhone(phone)
+func (s *authService) Login(req dto.LoginDTO) (*models.User, error) {
+	user, err := s.repo.GetByPhone(req.Phone)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")

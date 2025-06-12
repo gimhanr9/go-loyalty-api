@@ -18,8 +18,9 @@ func RegisterRoutes(router *gin.Engine) {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.POST("/earn", controllers.EarnPoints)
-		//protected.POST("/redeem", controllers.RedeemPoints)
+		protected.POST("/redeem", controllers.RedeemPoints)
 		protected.GET("/balance", controllers.GetBalance)
 		protected.GET("/history", controllers.GetHistory)
+		protected.GET("/rewardtiers", controllers.GetRewardTiers)
 	}
 }

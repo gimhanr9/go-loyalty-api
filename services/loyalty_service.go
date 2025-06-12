@@ -2,52 +2,32 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
 	square "github.com/square/square-go-sdk"
-	catalog "github.com/square/square-go-sdk/catalog"
 	client "github.com/square/square-go-sdk/client"
 	loyalty "github.com/square/square-go-sdk/loyalty"
 	option "github.com/square/square-go-sdk/option"
 
 	"github.com/google/uuid"
+
+	"github.com/gimhanr9/go-loyalty-api/dto"
 )
 
 type LoyaltyService interface {
-	EarnPoints(accountID string, description string, LoyaltyEventAccumulatePoints int) error
-	//RedeemPoints(accountID string, rewardTierID string) error
+	EarnPoints(req dto.EarnPointsDTO) error
+	RedeemPoints(req dto.RedeemPointsDTO) error
 	GetBalance(accountID string) (int, error)
 	GetHistory(accountID string) ([]square.LoyaltyEvent, error)
-}
-
-type Transaction struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	Points    int    `json:"points"`
-	Timestamp string `json:"timestamp"`
-}
-
-// Loyalty History return reponse
-type MappedLoyaltyHistoryResponse struct {
-	Transactions []Transaction `json:"transactions"`
-	Cursor       string        `json:"cursor"`
-}
-
-type RewardTier struct {
-	RewardTierID string `json:"rewardtierid"`
-	ObjectID     string `json:"objectid"`
-}
-
-type CheckRewardTier struct {
-	OrderID     string       `json:"orderid"`
-	RewardTiers []RewardTier `json:"rewardtiers"`
+	GetDiscountPercentageByClosestRewardTier(accountID string) (*dto.RewardTierDTO, error)
 }
 
 // EarnPoints adds points to the loyalty account
-func EarnPoints(accountID string, description string, amount int) error {
+func EarnPoints(req dto.EarnPointsDTO) error {
 
 	squareClient := client.NewClient(
 		option.WithBaseURL(
@@ -72,7 +52,7 @@ func EarnPoints(accountID string, description string, amount int) error {
 
 	programID = *programRes.Program.ID
 
-	custoemrRes, err := squareClient.Loyalty.Accounts.Search(
+	customerRes, err := squareClient.Loyalty.Accounts.Search(
 		context.TODO(),
 		&loyalty.SearchLoyaltyAccountsRequest{
 			Limit: square.Int(
@@ -85,16 +65,16 @@ func EarnPoints(accountID string, description string, amount int) error {
 		return fmt.Errorf("failed to get customer: %w", err)
 	}
 
-	customerId := custoemrRes.LoyaltyAccounts[0].CustomerID
+	customerId := customerRes.LoyaltyAccounts[0].CustomerID
 
 	reqOrder := &square.CreateOrderRequest{
 		Order: &square.Order{
 			LineItems: []*square.OrderLineItem{
 				{
-					Name:     &description,
+					Name:     square.String(req.Description),
 					Quantity: "1",
 					BasePriceMoney: &square.Money{
-						Amount:   square.Int64(int64(amount)),
+						Amount:   square.Int64(int64(req.Amount)),
 						Currency: square.CurrencyUsd.Ptr(),
 					},
 				},
@@ -111,15 +91,15 @@ func EarnPoints(accountID string, description string, amount int) error {
 		return fmt.Errorf("failed to create order: %w", err)
 	}
 
-	orderID := *resOrder.Order.ID
+	orderId := *resOrder.Order.ID
 
 	reqPayment := &square.CreatePaymentRequest{
 		SourceID: "cnon:card-nonce-ok",
 		AmountMoney: &square.Money{
-			Amount:   square.Int64(int64(amount)),
+			Amount:   square.Int64(int64(req.Amount)),
 			Currency: square.CurrencyUsd.Ptr(),
 		},
-		OrderID:        &orderID,
+		OrderID:        square.String(orderId),
 		IdempotencyKey: idempotencyKey,
 	}
 
@@ -133,9 +113,111 @@ func EarnPoints(accountID string, description string, amount int) error {
 	}
 
 	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
-		AccountID: accountID,
+		AccountID: req.AccountId,
 		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
-			OrderID:          square.String(orderID),
+			OrderID: square.String(orderId),
+		},
+		LocationID:     os.Getenv("LOCATION_ID"),
+		IdempotencyKey: idempotencyKey,
+	}
+
+	_, err = squareClient.Loyalty.Accounts.AccumulatePoints(context.TODO(), reqAccumulate)
+	if err != nil {
+		return fmt.Errorf("failed to accumulate points: %w", err)
+	}
+
+	return nil
+}
+
+// RedeemPoints redeems points for a reward tier
+func RedeemPoints(req dto.RedeemPointsDTO) error {
+
+	squareClient := client.NewClient(
+		option.WithBaseURL(
+			square.Environments.Sandbox,
+		),
+		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
+	)
+
+	idempotencyKey := uuid.New().String()
+
+	//Create order
+	reqOrder := &square.CreateOrderRequest{
+		Order: &square.Order{
+			LineItems: []*square.OrderLineItem{
+				&square.OrderLineItem{
+					Name:     square.String(req.Description),
+					Quantity: "1",
+					BasePriceMoney: &square.Money{
+						Amount: square.Int64(
+							int64(req.Amount),
+						),
+						Currency: square.CurrencyUsd.Ptr(),
+					},
+				},
+			},
+			LocationID: os.Getenv("LOCATION_ID"),
+		},
+		IdempotencyKey: &idempotencyKey,
+	}
+
+	resOrder, err := squareClient.Orders.Create(context.TODO(), reqOrder)
+	if err != nil {
+		return fmt.Errorf("failed to create order: %w", err)
+	}
+
+	var orderId = *resOrder.Order.ID
+
+	reqReward := &loyalty.CreateLoyaltyRewardRequest{
+		Reward: &square.LoyaltyReward{
+			LoyaltyAccountID: req.AccountId,
+			RewardTierID:     req.RewardTierId,
+			OrderID: square.String(
+				orderId,
+			),
+		},
+		IdempotencyKey: idempotencyKey,
+	}
+
+	_, err = squareClient.Loyalty.Rewards.Create(context.TODO(), reqReward)
+	if err != nil {
+		return errors.New("failed to create reward")
+	}
+
+	discountOrderRes, err := squareClient.Orders.Get(
+		context.TODO(),
+		&square.GetOrdersRequest{
+			OrderID: orderId,
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to get order details: %w", err)
+	}
+
+	reqPayment := &square.CreatePaymentRequest{
+		SourceID: "cnon:card-nonce-ok",
+		AmountMoney: &square.Money{
+			Amount:   discountOrderRes.Order.TotalMoney.Amount,
+			Currency: square.CurrencyUsd.Ptr(),
+		},
+		OrderID:        square.String(orderId),
+		IdempotencyKey: idempotencyKey,
+	}
+
+	paymentRes, err := squareClient.Payments.Create(context.TODO(), reqPayment)
+	if err != nil {
+		return fmt.Errorf("failed to create payment: %w", err)
+	}
+
+	if paymentRes.Payment == nil || paymentRes.Payment.Status == nil || *paymentRes.Payment.Status != "COMPLETED" {
+		return fmt.Errorf("payment not completed, status: %v", paymentRes.Payment.Status)
+	}
+
+	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
+		AccountID: req.AccountId,
+		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
+			OrderID:          square.String(orderId),
 			LoyaltyProgramID: &programID,
 		},
 		LocationID:     os.Getenv("LOCATION_ID"),
@@ -147,88 +229,8 @@ func EarnPoints(accountID string, description string, amount int) error {
 		return fmt.Errorf("failed to accumulate points: %w", err)
 	}
 
-	// reqCalculatePoints := &loyalty.CalculateLoyaltyPointsRequest{
-	// 	ProgramID: programID,
-	// 	TransactionAmountMoney: &square.Money{
-	// 		Amount: square.Int64(
-	// 			int64(amount),
-	// 		),
-	// 		Currency: square.CurrencyUsd.Ptr(),
-	// 	},
-	// 	LoyaltyAccountID: square.String(
-	// 		accountID,
-	// 	),
-	// }
-
-	// resCalc, err := squareClient.Loyalty.Programs.Calculate(context.TODO(), reqCalculatePoints)
-
-	// if err != nil {
-	// 	return fmt.Errorf("failed to calculate points: %w", err)
-	// }
-
-	// pointsEarned := *resCalc.Points
-
-	// if pointsEarned > 0 {
-	// 	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
-	// 		AccountID: accountID,
-	// 		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
-	// 			OrderID: square.String(orderID),
-	// 		},
-	// 		LocationID:     os.Getenv("LOCATION_ID"),
-	// 		IdempotencyKey: idempotencyKey,
-	// 	}
-
-	// 	_, err = squareClient.Loyalty.Accounts.AccumulatePoints(context.TODO(), reqAccumulate)
-	// 	if err != nil {
-	// 		return fmt.Errorf("failed to accumulate points: %w", err)
-	// 	}
-	// }
-
 	return nil
 }
-
-// RedeemPoints redeems points for a reward tier
-// func (s *loyaltyService) RedeemPoints(accountID string, rewardTierID string, productDescription string, amount int) error {
-// 	idempotencyKey := uuid.New().String()
-
-// 	//Create order
-// 	reqOrder := &square.CreateOrderRequest{
-// 		Order: &square.Order{
-// 			LineItems: []*square.OrderLineItem{
-// 				&square.OrderLineItem{
-// 					Name:     &productDescription,
-// 					Quantity: "1",
-// 					BasePriceMoney: &square.Money{
-// 						Amount: square.Int64(
-// 							int64(amount),
-// 						),
-// 						Currency: square.CurrencyUsd.Ptr(),
-// 					},
-// 				},
-// 			},
-// 			LocationID: os.Getenv("LOCATION_ID"),
-// 		},
-// 		IdempotencyKey: &idempotencyKey,
-// 	}
-
-// 	resOrder, errOrder := s.squareClient.Orders.Create(context.TODO(), reqOrder)
-// 	if errOrder != nil {
-// 		return errors.New("failed to create order")
-// 	}
-
-// 	var orderId = *resOrder.Order.ID
-
-// 	reqAccumulate := &loyalty.AccumulateLoyaltyPointsRequest{
-// 		AccountID: accountID,
-// 		AccumulatePoints: &square.LoyaltyEventAccumulatePoints{
-// 			OrderID: square.String(
-// 				orderId,
-// 			),
-// 		},
-// 		LocationID:     os.Getenv("LOCATION_ID"),
-// 		IdempotencyKey: idempotencyKey,
-// 	}
-// }
 
 // GetBalance fetches the points balance of the loyalty account
 func GetBalance(accountID string) (int, error) {
@@ -265,7 +267,7 @@ func formatTimestamp(raw string) string {
 }
 
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
-func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse, error) {
+func GetHistory(accountID string, cursor string) (*dto.MappedLoyaltyHistoryResponseDTO, error) {
 	squareClient := client.NewClient(
 		option.WithBaseURL(square.Environments.Sandbox),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
@@ -291,7 +293,7 @@ func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse,
 		return nil, fmt.Errorf("failed to fetch loyalty history for account %s: %w", accountID, err)
 	}
 
-	transactions := make([]Transaction, 0)
+	transactions := make([]dto.TransactionDTO, 0)
 	if resp.Events != nil {
 		for _, e := range resp.Events {
 			if e == nil {
@@ -303,8 +305,8 @@ func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse,
 				points = int(*e.AccumulatePoints.Points)
 			}
 
-			transactions = append(transactions, Transaction{
-				ID:        e.ID,
+			transactions = append(transactions, dto.TransactionDTO{
+				Id:        e.ID,
 				Type:      string(e.Type),
 				Points:    points,
 				Timestamp: formatTimestamp(e.CreatedAt),
@@ -317,13 +319,13 @@ func GetHistory(accountID string, cursor string) (*MappedLoyaltyHistoryResponse,
 		newCursor = *c
 	}
 
-	return &MappedLoyaltyHistoryResponse{
+	return &dto.MappedLoyaltyHistoryResponseDTO{
 		Transactions: transactions,
 		Cursor:       newCursor,
 	}, nil
 }
 
-func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *RewardTier {
+func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *dto.RewardTierDTO {
 	var closestTier *square.LoyaltyProgramRewardTier
 	minPoints := int(^uint(0) >> 1) // max int
 
@@ -342,14 +344,25 @@ func MapClosestRewardTier(program *square.LoyaltyProgram, userBalance int) *Rewa
 		return nil // No valid tier found
 	}
 
-	return &RewardTier{
-		RewardTierID: *closestTier.ID,
-		ObjectID:     *closestTier.PricingRuleReference.ObjectID, // optional value you can assign as needed
+	percentageStr := closestTier.Definition.PercentageDiscount
+	var discountPercentage float32
+
+	if percentageStr != nil {
+		if f, err := strconv.ParseFloat(*percentageStr, 32); err == nil {
+			discountPercentage = float32(f)
+		} else {
+			discountPercentage = 0
+		}
+	}
+
+	return &dto.RewardTierDTO{
+		RewardTierId:       *closestTier.ID,
+		DiscountPercentage: discountPercentage,
 	}
 }
 
 // GetHistory retrieves loyalty events (transactions, redemptions, etc.) for the account
-func GetDiscountPercentageByClosestRewardTier(accountID string) (float64, error) {
+func GetDiscountPercentageByClosestRewardTier(accountID string) (*dto.RewardTierDTO, error) {
 	squareClient := client.NewClient(
 		option.WithBaseURL(square.Environments.Sandbox),
 		option.WithToken(os.Getenv("SQUARE_ACCESS_TOKEN")),
@@ -359,41 +372,27 @@ func GetDiscountPercentageByClosestRewardTier(accountID string) (float64, error)
 	resp, err := squareClient.Loyalty.Accounts.Get(context.TODO(),
 		&loyalty.GetAccountsRequest{AccountID: accountID})
 	if err != nil || resp.LoyaltyAccount == nil {
-		return 0, fmt.Errorf("failed to get account %s balance: %w", accountID, err)
+		return &dto.RewardTierDTO{RewardTierId: "", DiscountPercentage: 0}, fmt.Errorf("failed to get account %s balance: %w", accountID, err)
 	}
 
-	// Get balance safely
+	// Safe balance
 	balance := 0
 	if resp.LoyaltyAccount.Balance != nil {
 		balance = *resp.LoyaltyAccount.Balance
 	}
 
-	// Get program
+	// Get loyalty program
 	programRes, err := squareClient.Loyalty.Programs.Get(context.TODO(),
 		&loyalty.GetProgramsRequest{ProgramID: "main"})
 	if err != nil || programRes.Program == nil {
-		return 0, fmt.Errorf("failed to retrieve loyalty program: %w", err)
+		return &dto.RewardTierDTO{RewardTierId: "", DiscountPercentage: 0}, fmt.Errorf("failed to retrieve loyalty program: %w", err)
 	}
 
-	// Find the reward tier
+	// Get closest tier
 	rewardTier := MapClosestRewardTier(programRes.Program, balance)
 	if rewardTier == nil {
-		return 0, nil // No tier available, return 0
+		return &dto.RewardTierDTO{RewardTierId: "", DiscountPercentage: 0}, nil
 	}
 
-	// Fetch the discount object
-	discountRes, err := squareClient.Catalog.Object.Get(context.TODO(),
-		&catalog.GetObjectRequest{ObjectID: rewardTier.ObjectID})
-	if err != nil || discountRes.Object == nil || discountRes.Object.Discount == nil {
-		return 0, nil // Return 0 on any missing part
-	}
-
-	// Extract percentage
-	percentageStr := discountRes.Object.Discount.DiscountData.Percentage
-	percentage, err := strconv.ParseFloat(percentageStr, 64)
-	if err != nil {
-		return 0, nil
-	}
-
-	return percentage, nil
+	return rewardTier, nil
 }
