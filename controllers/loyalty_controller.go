@@ -11,7 +11,7 @@ import (
 func RedeemPoints(c *gin.Context) {
 	var req dto.RedeemPointsDTO
 
-	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Description == "" {
+	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Description == "" || req.RewardTierId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
