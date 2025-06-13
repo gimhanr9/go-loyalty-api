@@ -31,6 +31,6 @@ Variables needed for environment files:
 
 2 Add the environment files.
 
-3 Go to the project directory and in the terminal run command `go mod download`
+3 Go to the project directory and in the terminal run command `go mod download` (This will automatically add the sqlite database file)
 
 4 Finally run the command `go run main.go`
